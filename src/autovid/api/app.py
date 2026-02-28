@@ -64,3 +64,16 @@ app.include_router(social.router, prefix="/api/v1", tags=["social"])
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "autovid-api"}
+
+
+def main() -> None:
+    """Entry point for `autovid` CLI command (pyproject.toml [project.scripts])."""
+    import uvicorn
+
+    uvicorn.run(
+        "autovid.api.app:app",
+        host="0.0.0.0",
+        port=8080,
+        reload=True,
+        log_level="info",
+    )

@@ -205,25 +205,7 @@ Phase 2: Agentic Editing (starts on style prompt)
 
 ## Quick Start
 
-```bash
-# 1. Clone and configure
-cp .env.example .env
-
-# 2. Start infrastructure
-docker compose up -d postgres redis minio minio-init phoenix
-
-# 3. Build sandbox image
-docker compose build sandbox-build
-
-# 4. Install backend
-pip install -e ".[dev]"
-
-# 5. Start backend
-uvicorn autovid.api.app:app --port 8080 --reload
-
-# 6. Install and start frontend
-cd frontend && npm install && npm run dev
-```
+See [DEV_SETUP.md](DEV_SETUP.md) for full setup instructions.
 
 Open `http://localhost:3000` for the editor UI, `http://localhost:6006` for Phoenix traces.
 
