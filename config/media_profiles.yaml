@@ -1,0 +1,104 @@
+# Auto-Vid Media Processing Profiles
+# All processing executes natively on a Mac mini (no Docker sandbox).
+# FFmpeg and Remotion are installed directly on the host machine.
+
+profiles:
+  short_form:
+    width: 1080
+    height: 1920
+    fps: 30
+    codec: h264
+    preset: fast
+    crf: 23
+    audio_codec: aac
+    audio_sample_rate: 44100
+    audio_bitrate: 128k
+    pixel_format: yuv420p
+    aspect_ratio: "9:16"
+    max_duration_s: 60
+    min_duration_s: 15
+
+  long_form:
+    width: 1920
+    height: 1080
+    fps: 30
+    codec: h264
+    preset: fast
+    crf: 23
+    audio_codec: aac
+    audio_sample_rate: 44100
+    audio_bitrate: 192k
+    pixel_format: yuv420p
+    aspect_ratio: "16:9"
+
+  preview:
+    width: 540
+    height: 960
+    fps: 15
+    codec: h264
+    preset: ultrafast
+    crf: 28
+    audio_codec: aac
+    audio_sample_rate: 44100
+    pixel_format: yuv420p
+
+  thumbnail:
+    width: 540
+    height: 960
+    format: jpg
+    quality: 85
+
+# Platform-specific constraints
+platforms:
+  tiktok:
+    max_file_size_mb: 500
+    max_duration_s: 600
+    min_duration_s: 1
+    required_codec: h264
+    required_container: mp4
+    aspect_ratios: ["9:16", "1:1", "16:9"]
+    preferred_aspect_ratio: "9:16"
+
+  instagram_reels:
+    max_file_size_mb: 1000
+    max_duration_s: 900
+    min_duration_s: 3
+    required_codec: h264
+    required_container: mp4
+    aspect_ratios: ["9:16", "1:1", "4:5"]
+    preferred_aspect_ratio: "9:16"
+
+  youtube_shorts:
+    max_file_size_gb: 256
+    max_duration_s: 60
+    required_codec: h264
+    required_container: mp4
+    aspect_ratios: ["9:16"]
+    preferred_aspect_ratio: "9:16"
+
+  youtube_long:
+    max_file_size_gb: 256
+    required_codec: h264
+    required_container: mp4
+    aspect_ratios: ["16:9", "4:3", "1:1"]
+    preferred_aspect_ratio: "16:9"
+
+# FFmpeg command templates
+# These run as native subprocess calls on the Mac mini host.
+ffmpeg:
+  normalize: >
+    -vf "scale={width}:{height}:force_original_aspect_ratio=decrease,
+    pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1"
+    -c:v libx264 -preset {preset} -crf {crf}
+    -c:a aac -ar {audio_sample_rate} -b:a {audio_bitrate}
+    -pix_fmt {pixel_format}
+
+  extract_audio: >
+    -vn -acodec pcm_s16le -ar 16000 -ac 1
+
+  scene_detect: >
+    -filter_complex "select='gt(scene,{threshold})',metadata=print"
+    -vsync vfr
+
+  extract_frames: >
+    -vf "fps={fps}" -q:v 2

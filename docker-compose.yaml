@@ -1,0 +1,123 @@
+version: "3.9"
+
+services:
+  # ─── Storage Layer ───────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autovid
+      POSTGRES_USER: autovid
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autovid_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autovid"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ACCESS_KEY:-minioadmin} $${MINIO_SECRET_KEY:-minioadmin};
+      mc mb --ignore-existing local/autovid-raw;
+      mc mb --ignore-existing local/autovid-chunks;
+      mc mb --ignore-existing local/autovid-assets;
+      mc mb --ignore-existing local/autovid-output;
+      mc mb --ignore-existing local/autovid-thumbnails;
+      echo 'Buckets initialized.';
+      "
+
+  # ─── Observability ──────────────────────────────────────────────────
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    restart: unless-stopped
+    ports:
+      - "6006:6006"   # Phoenix UI + OTLP traces endpoint
+    environment:
+      PHOENIX_WORKING_DIR: /data
+    volumes:
+      - phoenixdata:/data
+
+  # ─── Application ────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://autovid:${POSTGRES_PASSWORD:-autovid_dev}@postgres:5432/autovid
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_SECURE: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix:6006/v1/traces
+      SANDBOX_IMAGE: autovid-sandbox:latest
+      SANDBOX_NETWORK: none
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # sandbox container management
+      - ./config:/app/config:ro
+      - ./assets:/app/assets:ro
+
+  # ─── Sandbox (built, not run as a service — spawned per job) ────────
+  # Build the sandbox image so it's available for the backend to spawn
+  sandbox-build:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    image: autovid-sandbox:latest
+    entrypoint: ["echo", "Sandbox image built successfully"]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  phoenixdata:

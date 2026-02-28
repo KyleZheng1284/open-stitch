@@ -1,0 +1,107 @@
+# Auto-Vid Subtitle Style Presets
+
+styles:
+  tiktok_pop:
+    font_family: Montserrat-Bold
+    font_size: 48
+    font_weight: bold
+    color: "#FFFFFF"
+    highlight_color: "#FFD700"
+    outline_color: "#000000"
+    outline_width: 3
+    shadow: true
+    shadow_color: "#00000080"
+    shadow_offset: [2, 2]
+    position: bottom_center      # "bottom_center", "top_center", "center"
+    margin_bottom: 120           # pixels from bottom edge
+    animation: word_pop          # animation applied to each word as it's spoken
+    word_animation:
+      type: scale_pop
+      scale_in: 1.3
+      scale_out: 1.0
+      duration_ms: 120
+      easing: spring
+    line_breaks: true
+    max_chars_per_line: 32
+    max_lines: 2
+
+  minimal:
+    font_family: Inter-Regular
+    font_size: 36
+    font_weight: normal
+    color: "#FFFFFF"
+    highlight_color: null
+    outline_color: "#000000"
+    outline_width: 2
+    shadow: false
+    position: bottom_center
+    margin_bottom: 80
+    animation: fade              # "none", "fade", "word_pop"
+    line_breaks: true
+    max_chars_per_line: 40
+    max_lines: 2
+
+  karaoke:
+    font_family: Montserrat-Bold
+    font_size: 52
+    font_weight: bold
+    color: "#FFFFFF"
+    highlight_color: "#00D4FF"
+    filled_color: "#FF6B00"
+    outline_color: "#000000"
+    outline_width: 3
+    shadow: true
+    shadow_color: "#00000080"
+    shadow_offset: [2, 2]
+    position: center
+    margin_bottom: 0
+    animation: karaoke_fill
+    word_timing: true            # highlight word as it's spoken
+    line_breaks: true
+    max_chars_per_line: 28
+    max_lines: 2
+
+  outline:
+    font_family: Arial-Bold
+    font_size: 44
+    font_weight: bold
+    color: "#FFFFFF"
+    highlight_color: null
+    outline_color: "#000000"
+    outline_width: 4
+    shadow: false
+    position: bottom_center
+    margin_bottom: 100
+    animation: none
+    line_breaks: true
+    max_chars_per_line: 36
+    max_lines: 2
+
+# ASS format style templates
+ass_styles:
+  tiktok_pop: |
+    Style: Default,Montserrat-Bold,48,&H00FFFFFF,&H00FFD700,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,2,2,10,10,120,1
+
+  minimal: |
+    Style: Default,Inter-Regular,36,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,0,0,100,100,0,0,1,2,0,2,10,10,80,1
+
+  karaoke: |
+    Style: Default,Montserrat-Bold,52,&H00FFFFFF,&H0000D4FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,2,5,10,10,120,1
+
+  outline: |
+    Style: Default,Arial-Bold,44,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,0,0,100,100,0,0,1,4,0,2,10,10,100,1
+
+# Platform-specific constraints
+platform_constraints:
+  tiktok:
+    max_chars_per_subtitle: 60
+    max_duration_ms: 3000        # max duration of a single subtitle block
+    recommended_style: tiktok_pop
+
+  instagram:
+    max_chars_per_subtitle: 80
+    recommended_style: tiktok_pop
+
+  youtube:
+    max_chars_per_subtitle: 100
+    recommended_style: minimal
