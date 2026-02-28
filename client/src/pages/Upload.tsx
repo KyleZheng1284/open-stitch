@@ -119,7 +119,7 @@ export default function Upload() {
             : `Upload ${files.length} file${files.length !== 1 ? "s" : ""}`}
         </button>
       </div>
-      <DriveUploader />
+      <DriveUploader files={files} />
     </div>
   );
 }
