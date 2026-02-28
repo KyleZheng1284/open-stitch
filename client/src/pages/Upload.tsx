@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { uploadFiles } from "../lib/api";
+import DriveUploader from "../components/DriveUploader";
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -118,6 +119,7 @@ export default function Upload() {
             : `Upload ${files.length} file${files.length !== 1 ? "s" : ""}`}
         </button>
       </div>
+      <DriveUploader />
     </div>
   );
 }
