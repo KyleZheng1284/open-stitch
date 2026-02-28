@@ -4,7 +4,7 @@
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const FOLDER_CACHE_KEY = 'driveUploadsFolderId';
-const UPLOADS_FOLDER_NAME = 'YourApp Uploads';
+const UPLOADS_FOLDER_NAME = 'Open Stitch Uploads';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 /** Infer MIME type from file extension when File.type is absent (e.g. .mov on some browsers). */
