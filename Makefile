@@ -121,6 +121,10 @@ dev: ## Start backend (uvicorn) + frontend (next dev) in parallel
 backend: ## Start backend only
 	$(PYTHON_BIN) -m uvicorn autovid.api.app:app --port 8080 --reload
 
+.PHONY: relay
+relay: ## Start team inference relay on :8090
+	$(PYTHON_BIN) -m uvicorn relay.main:app --host 127.0.0.1 --port 8090 --reload
+
 .PHONY: frontend
 frontend: ## Start frontend only
 	cd frontend && npm run dev

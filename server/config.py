@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     vlm_model: str = "gcp/google/gemini-3-pro"
     llm_model: str = "gcp/google/gemini-3-pro"
     llm_temperature: float = 0.4
+    clarifying_model: str = "us/azure/openai/gpt-5-mini"
+    clarifying_temperature: float = 0.2
     editing_model: str = "azure/openai/gpt-5.2"
     editing_temperature: float = 0.3
     summary_model: str = "gcp/google/gemini-2.5-flash-lite"
@@ -58,6 +60,13 @@ def _load_yaml(filepath: str | Path) -> dict[str, Any]:
         return {}
     with open(path) as f:
         return yaml.safe_load(f) or {}
+
+
+@lru_cache(maxsize=1)
+def load_agents_config() -> dict[str, Any]:
+    """Load config/agents.yaml once and cache it."""
+    path = Path(get_settings().config_dir) / "agents.yaml"
+    return _load_yaml(path)
 
 
 def load_prompt(name: str) -> str:

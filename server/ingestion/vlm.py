@@ -73,8 +73,10 @@ def analyze_window(
     return _parse_json(raw)
 
 
-def run_vlm(frame_uris: list[str], fps: int, window_s: int, duration: float) -> list[dict]:
-    """Run dense VLM across all windows. Returns list of window results."""
+def run_vlm(frame_uris: list[str], fps: int, window_s: int, duration: float, max_concurrent: int = 3) -> list[dict]:
+    """Run dense VLM across all windows concurrently. Returns list of window results."""
+    from concurrent.futures import ThreadPoolExecutor
+
     s = get_settings()
     client = httpx.Client(
         timeout=180.0,
@@ -83,15 +85,16 @@ def run_vlm(frame_uris: list[str], fps: int, window_s: int, duration: float) -> 
     frames_per_window = fps * window_s
     num_windows = (len(frame_uris) + frames_per_window - 1) // frames_per_window
 
-    results = []
-    for w in range(num_windows):
+    def process_window(w: int) -> dict:
         start_idx = w * frames_per_window
         end_idx = min(start_idx + frames_per_window, len(frame_uris))
         window_uris = frame_uris[start_idx:end_idx]
         window_start_s = start_idx / fps
-
         logger.info("VLM window %d/%d (t=%.1f-%.1fs)", w + 1, num_windows, window_start_s, window_start_s + len(window_uris) / fps)
-        result = analyze_window(client, window_uris, window_start_s, fps, duration)
-        results.append(result)
+        return analyze_window(client, window_uris, window_start_s, fps, duration)
+
+    logger.info("Running %d VLM windows (max %d concurrent)", num_windows, max_concurrent)
+    with ThreadPoolExecutor(max_workers=max_concurrent) as pool:
+        results = list(pool.map(process_window, range(num_windows)))
 
     return results

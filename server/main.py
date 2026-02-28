@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -11,15 +13,26 @@ from starlette.staticfiles import StaticFiles
 
 from server.config import get_settings
 
+# Configure logging so all server.* loggers print to console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+    force=True,
+)
+
 logger = logging.getLogger(__name__)
+
+# StaticFiles mount validates directory at import time.
+Path("data").mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("Starting Auto-Vid API — db=%s", settings.database_url.split("@")[-1])
-    # Ensure upload dir exists
-    from pathlib import Path
+    # Ensure upload/output dirs exist.
     Path("data/uploads").mkdir(parents=True, exist_ok=True)
     Path("data/output").mkdir(parents=True, exist_ok=True)
     yield

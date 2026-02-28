@@ -1,72 +1,99 @@
 """Docker sandbox lifecycle management.
 
-Mounts the host data/ directory into /workspace/data so the container
-can read uploaded videos directly without base64 HTTP staging.
+Uses a single persistent container with data/ volume-mounted.
+New uploads are immediately visible since the mount is live.
 """
 from __future__ import annotations
 
 import logging
-import uuid
+import time
 from pathlib import Path
+
+import httpx
 
 from server.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_containers: dict[str, dict] = {}
-
-# Resolve the host data dir once (for volume mount)
 _DATA_DIR = str(Path("data").resolve())
+_CONTAINER_NAME = "autovid-sandbox"
+
+# Singleton sandbox state
+_sandbox: dict | None = None
 
 
 async def create_sandbox(job_id: str) -> str:
-    """Spawn a sandbox container and return its ID."""
+    """Get or create the persistent sandbox container."""
+    global _sandbox
+
+    # Reuse existing if healthy
+    if _sandbox and not _sandbox.get("mock"):
+        try:
+            port = _sandbox["port"]
+            resp = httpx.get(f"http://localhost:{port}/health", timeout=3.0)
+            if resp.status_code == 200:
+                logger.info("Reusing sandbox on port %s", port)
+                return _CONTAINER_NAME
+        except Exception:
+            logger.info("Existing sandbox unhealthy, recreating")
+            _sandbox = None
+
     s = get_settings()
-    sandbox_id = f"sandbox_{uuid.uuid4().hex[:8]}"
 
     try:
         import docker
         client = docker.from_env()
+
+        # Remove stale container if exists
+        try:
+            old = client.containers.get(_CONTAINER_NAME)
+            old.stop(timeout=5)
+            old.remove()
+            logger.info("Removed stale sandbox container")
+        except Exception:
+            pass
+
         container = client.containers.run(
             s.sandbox_image,
             detach=True,
-            name=sandbox_id,
-            ports={"9876/tcp": None},
+            name=_CONTAINER_NAME,
+            ports={"9876/tcp": ("0.0.0.0", 9876)},
             volumes={_DATA_DIR: {"bind": "/workspace/data", "mode": "rw"}},
             mem_limit="8g",
             cpu_count=4,
             tmpfs={"/tmp": "size=2g"},
             remove=False,
         )
-        # Wait for port assignment
-        container.reload()
-        ports = container.ports.get("9876/tcp", [{}])
-        port = ports[0].get("HostPort", "9876") if ports else "9876"
-        _containers[sandbox_id] = {"container": container, "port": port, "job_id": job_id}
-        logger.info("Sandbox %s created on port %s (data mounted at /workspace/data)", sandbox_id, port)
-    except Exception as e:
-        logger.warning("Docker not available, using mock sandbox: %s", e)
-        _containers[sandbox_id] = {"port": "9876", "job_id": job_id, "mock": True}
 
-    return sandbox_id
+        # Wait for server to be ready
+        for _ in range(10):
+            time.sleep(1)
+            try:
+                resp = httpx.get("http://localhost:9876/health", timeout=3.0)
+                if resp.status_code == 200:
+                    break
+            except Exception:
+                pass
+
+        _sandbox = {"container": container, "port": "9876", "job_id": job_id}
+        logger.info("Sandbox ready on port 9876 (data mounted at /workspace/data)")
+
+    except Exception as e:
+        logger.warning("Docker not available, using ffmpeg fallback: %s", e)
+        _sandbox = {"port": "9876", "job_id": job_id, "mock": True}
+
+    return _CONTAINER_NAME
 
 
 async def destroy_sandbox(sandbox_id: str):
-    """Stop and remove a sandbox container."""
-    info = _containers.pop(sandbox_id, None)
-    if info and "container" in info:
-        try:
-            info["container"].stop(timeout=10)
-            info["container"].remove()
-        except Exception as e:
-            logger.warning("Failed to remove sandbox %s: %s", sandbox_id, e)
+    """No-op for persistent sandbox. Container stays running."""
+    pass
 
 
 def get_sandbox_url(sandbox_id: str) -> str:
-    info = _containers.get(sandbox_id, {})
-    port = info.get("port", "9876")
+    port = _sandbox["port"] if _sandbox else "9876"
     return f"http://localhost:{port}"
 
 
 def is_mock(sandbox_id: str) -> bool:
-    return _containers.get(sandbox_id, {}).get("mock", False)
+    return (_sandbox or {}).get("mock", False)

@@ -93,30 +93,62 @@ def merge_timeline(asr_result: dict, vlm_windows: list[dict]) -> list[dict]:
     return timeline
 
 
-async def ingest_video(video_path: str, dense_fps: int = 4, window_s: int = 5) -> dict:
-    """Full ingestion of a single video. Returns summary, asr, vlm, timeline."""
+async def ingest_video_summary(video_path: str) -> dict:
+    """Fast pass: extract summary frames + run Flash Lite summary (~10-20s).
+
+    Returns partial ingestion data with summary, duration, and info.
+    """
     s = get_settings()
     info = get_video_info(video_path)
     duration = info["duration"]
 
-    logger.info("Ingesting %s (%.1fs, %dx%d)", video_path, duration, info["width"], info["height"])
+    logger.info("⚡ Fast summary for %s (%.1fs)", video_path, duration)
 
-    # Step 1: Extract frames + audio in parallel
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        dense_fut = pool.submit(extract_frames, video_path, dense_fps)
+    with ThreadPoolExecutor(max_workers=2) as pool:
         summary_fut = pool.submit(extract_frames, video_path, s.summary_fps)
         audio_fut = pool.submit(extract_audio, video_path)
-        dense_frames = dense_fut.result()
         summary_frames = summary_fut.result()
         audio_path = audio_fut.result()
 
-    dense_uris = [encode_frame(f) for f in dense_frames]
     summary_uris = [encode_frame(f) for f in summary_frames]
+    summary_text = run_fast_summary(summary_uris, duration)
 
-    # Step 2: ASR + dense VLM + fast summary in parallel
+    logger.info("⚡ Summary ready for %s (%d chars)", video_path, len(summary_text))
+
+    return {
+        "video_path": video_path,
+        "duration_s": duration,
+        "info": info,
+        "summary": summary_text,
+        "asr": None,
+        "vlm_windows": None,
+        "timeline": [],
+        "_audio_path": str(audio_path),
+    }
+
+
+async def ingest_video_deep(partial: dict, dense_fps: int = 4, window_s: int = 5) -> dict:
+    """Deep pass: run ASR + dense VLM on a video that already has a summary.
+
+    Mutates and returns the partial dict with full ASR, VLM, and merged timeline.
+    """
+    video_path = partial["video_path"]
+    duration = partial["duration_s"]
+    audio_path = Path(partial.get("_audio_path", ""))
+
+    logger.info("🔬 Deep analysis for %s (ASR + VLM @ %dfps)", video_path, dense_fps)
+
+    # Extract dense frames
+    dense_frames = extract_frames(video_path, dense_fps)
+    dense_uris = [encode_frame(f) for f in dense_frames]
+
+    # Re-extract audio if path is missing
+    if not audio_path.exists():
+        audio_path = extract_audio(video_path)
+
+    # ASR + dense VLM in parallel
     asr_result = None
     vlm_results = None
-    summary_text = None
 
     def asr_task():
         nonlocal asr_result
@@ -126,27 +158,30 @@ async def ingest_video(video_path: str, dense_fps: int = 4, window_s: int = 5) -
         nonlocal vlm_results
         vlm_results = run_vlm(dense_uris, dense_fps, window_s, duration)
 
-    def summary_task():
-        nonlocal summary_text
-        summary_text = run_fast_summary(summary_uris, duration)
-
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        futs = [pool.submit(f) for f in [summary_task, asr_task, vlm_task]]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futs = [pool.submit(f) for f in [asr_task, vlm_task]]
         for f in futs:
             f.result()
 
-    # Step 3: Merge timeline
+    # Merge timeline
     timeline = merge_timeline(asr_result, vlm_results)
 
-    return {
-        "video_path": video_path,
-        "duration_s": duration,
-        "info": info,
-        "summary": summary_text,
-        "asr": asr_result,
-        "vlm_windows": vlm_results,
-        "timeline": timeline,
-    }
+    partial["asr"] = asr_result
+    partial["vlm_windows"] = vlm_results
+    partial["timeline"] = timeline
+    partial.pop("_audio_path", None)
+
+    logger.info(
+        "✅ Deep analysis done for %s — ASR=%d words, VLM=%d timeline entries",
+        video_path, len(asr_result.get("words", [])), len(timeline),
+    )
+    return partial
+
+
+async def ingest_video(video_path: str, dense_fps: int = 4, window_s: int = 5) -> dict:
+    """Full ingestion (summary + deep) in one call. For backwards compat."""
+    partial = await ingest_video_summary(video_path)
+    return await ingest_video_deep(partial, dense_fps, window_s)
 
 
 async def ingest_project(project: dict) -> dict:
