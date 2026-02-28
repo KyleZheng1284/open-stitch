@@ -8,8 +8,10 @@ directly into a Remotion render call — no guessing, no interpretation.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 
 import httpx
 
@@ -52,12 +54,18 @@ EDIT_PLAN_SCHEMA = """\
 }"""
 
 
-def _call_llm(
+def _retry_delay_s(attempt: int) -> float:
+    # Exponential backoff with jitter for transient rate/infra issues.
+    return min(4.0, (2 ** attempt) * 0.4) + random.uniform(0.0, 0.2)
+
+
+async def _call_llm(
     messages: list[dict],
     *,
     model: str | None = None,
     temperature: float | None = None,
     max_tokens: int = 8192,
+    retries: int = 2,
 ) -> str:
     """Call any model on the NIM inference API.
 
@@ -68,13 +76,6 @@ def _call_llm(
     use_model = model or s.editing_model
     use_temp = temperature if temperature is not None else s.editing_temperature
 
-    client = httpx.Client(
-        timeout=180.0,
-        headers={
-            "Authorization": f"Bearer {s.nvidia_api_key}",
-            "Content-Type": "application/json",
-        },
-    )
     payload = {
         "model": use_model,
         "messages": messages,
@@ -83,9 +84,47 @@ def _call_llm(
         "stream": False,
     }
     logger.info("LLM call: model=%s temp=%.1f tokens=%d", use_model, use_temp, max_tokens)
-    resp = client.post(f"{s.nvidia_base_url}/chat/completions", json=payload)
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+
+    for attempt in range(retries + 1):
+        try:
+            async with httpx.AsyncClient(
+                timeout=180.0,
+                headers={
+                    "Authorization": f"Bearer {s.nvidia_api_key}",
+                    "Content-Type": "application/json",
+                },
+            ) as client:
+                resp = await client.post(f"{s.nvidia_base_url}/chat/completions", json=payload)
+
+            if resp.status_code == 429 or 500 <= resp.status_code < 600:
+                if attempt < retries:
+                    delay = _retry_delay_s(attempt)
+                    logger.warning(
+                        "Editing LLM retry after status=%d (attempt %d/%d, %.2fs delay)",
+                        resp.status_code,
+                        attempt + 1,
+                        retries + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            if attempt < retries:
+                delay = _retry_delay_s(attempt)
+                logger.warning(
+                    "Editing LLM transport retry (attempt %d/%d, %.2fs delay): %s",
+                    attempt + 1,
+                    retries + 1,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+
+    raise RuntimeError("Editing LLM call failed after retries")
 
 
 def _parse_json(content: str) -> dict:
@@ -151,7 +190,7 @@ def _build_video_context(ingestion_data: dict) -> tuple[str, dict[str, str]]:
 
 # ── Generate edit plan ───────────────────────────────────────────────
 
-def generate_edit_plan(structured_prompt: str, ingestion_data: dict) -> tuple[dict, dict[str, str]]:
+async def generate_edit_plan(structured_prompt: str, ingestion_data: dict) -> tuple[dict, dict[str, str]]:
     """Call GPT-5.2 with full context to produce a precise edit plan."""
     video_context, key_to_path = _build_video_context(ingestion_data)
     video_keys = sorted(k for k in key_to_path if k.startswith("video_"))
@@ -223,7 +262,7 @@ def generate_edit_plan(structured_prompt: str, ingestion_data: dict) -> tuple[di
     ]
 
     logger.info("Calling editing model (%s) for edit plan...", get_settings().editing_model)
-    raw = _call_llm(messages)
+    raw = await _call_llm(messages)
     return _parse_json(raw), key_to_path
 
 
@@ -310,7 +349,7 @@ async def run_editing_agent(project: dict) -> str:
 
     # Step 1: LLM generates edit plan from full video context
     logger.info("Generating edit plan...")
-    edit_plan, key_to_path = generate_edit_plan(structured_prompt, ingestion_data)
+    edit_plan, key_to_path = await generate_edit_plan(structured_prompt, ingestion_data)
     logger.info("Edit plan:\n%s", json.dumps(edit_plan, indent=2)[:2000])
 
     # Step 2: Convert to Remotion Composition

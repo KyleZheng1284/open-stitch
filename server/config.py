@@ -62,6 +62,13 @@ def _load_yaml(filepath: str | Path) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
+@lru_cache(maxsize=1)
+def load_agents_config() -> dict[str, Any]:
+    """Load config/agents.yaml once and cache it."""
+    path = Path(get_settings().config_dir) / "agents.yaml"
+    return _load_yaml(path)
+
+
 def load_prompt(name: str) -> str:
     path = Path(get_settings().config_dir) / "prompts" / name
     if not path.exists():
