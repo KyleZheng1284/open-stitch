@@ -40,6 +40,19 @@ export default function DriveUploader() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const { getAccessToken } = useGoogleDriveAuth();
 
+  // Cache the access token across batches.
+  //
+  // useGoogleDriveAuth initialises the GIS TokenClient once and its callback
+  // closes over the resolve/reject of the *first* Promise created by
+  // getAccessToken(). Calling getAccessToken() a second time creates a new
+  // Promise whose resolve2/reject2 are never called — the old callback still
+  // fires resolve from batch 1, which is already settled. The second Promise
+  // hangs forever, keeping uploading=true indefinitely.
+  //
+  // Caching the token here means getAccessToken() is called at most once per
+  // page load. GIS tokens are valid for ~3600 s, which is fine for a session.
+  const accessTokenRef = useRef<string | null>(null);
+
   /** Update a single entry by File object identity. */
   const patchEntry = (file: File, patch: Partial<FileEntry>) => {
     setEntries((prev) => prev.map((e) => (e.file === file ? { ...e, ...patch } : e)));
@@ -62,37 +75,45 @@ export default function DriveUploader() {
   };
 
   const handleUpload = async () => {
-    const readyEntries = entries.filter((e) => e.status === 'ready');
-    if (readyEntries.length === 0) return;
+    // Capture File references (not entry objects) at click time so the loop
+    // target is a stable, closed-over list regardless of state updates mid-run.
+    const targetFiles = entries
+      .filter((e) => e.status === 'ready')
+      .map((e) => e.file);
+
+    if (targetFiles.length === 0) return;
 
     setUploading(true);
     setGlobalError(null);
 
-    let token: string;
-    let folderId: string;
-
     try {
-      token = await getAccessToken();
-      folderId = await getOrCreateUploadsFolderId(token);
-    } catch (err) {
-      setGlobalError(err instanceof Error ? err.message : String(err));
-      setUploading(false);
-      return;
-    }
-
-    for (const entry of readyEntries) {
-      patchEntry(entry.file, { status: 'uploading' });
-      try {
-        const uploadUrl = await startResumableSession(token, entry.file, folderId);
-        const result = await uploadToSession(uploadUrl, entry.file);
-        patchEntry(entry.file, { status: 'done', driveId: result.id });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        patchEntry(entry.file, { status: 'error', errorMsg: msg });
+      // Reuse a cached token if available; otherwise acquire one (first batch).
+      if (!accessTokenRef.current) {
+        accessTokenRef.current = await getAccessToken();
       }
-    }
+      const token = accessTokenRef.current;
+      const folderId = await getOrCreateUploadsFolderId(token);
 
-    setUploading(false);
+      for (const file of targetFiles) {
+        patchEntry(file, { status: 'uploading' });
+        try {
+          const uploadUrl = await startResumableSession(token, file, folderId);
+          const result = await uploadToSession(uploadUrl, file);
+          patchEntry(file, { status: 'done', driveId: result.id });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          patchEntry(file, { status: 'error', errorMsg: msg });
+        }
+      }
+    } catch (err) {
+      // Auth or folder-creation failed; clear cached token so next attempt
+      // retries the OAuth flow rather than reusing a potentially bad token.
+      accessTokenRef.current = null;
+      setGlobalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      // Guaranteed to run even if an unexpected error escapes the inner catches.
+      setUploading(false);
+    }
   };
 
   const readyCount = entries.filter((e) => e.status === 'ready').length;
