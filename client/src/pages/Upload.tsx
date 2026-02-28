@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { uploadFiles } from "../lib/api";
+import DriveUploader from "../components/DriveUploader";
 
 interface UploadedFile {
   id: string;
@@ -382,6 +383,9 @@ function UploadContent() {
               </Button>
             </motion.div>
           )}
+
+          {/* Google Drive upload status — appears automatically once files are added */}
+          <DriveUploader files={uploadedFiles.map((f) => f.raw)} />
         </motion.div>
       </div>
 
