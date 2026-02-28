@@ -77,5 +77,6 @@ temp/
 # Jupyter
 .ipynb_checkpoints/
 
-# Claude
-.claude/
+# Claude (keep skills/ tracked for team, ignore local config)
+.claude/*
+!.claude/skills/
