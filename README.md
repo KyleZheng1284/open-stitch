@@ -4,6 +4,8 @@
 
 Built with LangGraph, Remotion, FastAPI, React Flow, and Qwen3.5-397B-A17B.
 
+Mikey was here.
+
 ---
 
 ## Architecture Overview
