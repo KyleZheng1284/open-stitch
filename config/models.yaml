@@ -1,77 +1,69 @@
-# Auto-Vid Model Configuration
-# Swapping models = changing this file only. No code changes required.
+# Open-Stitch Model Configuration
+# All models go through NVIDIA NIM inference API by default.
+# Set NVIDIA_API_KEY in .env to get started.
 
 models:
+  # ─── VLM (Vision + Language) ─────────────────────────────────────
+  # Gemini 3 Pro via NIM — native multimodal (text + image + video)
+  vlm:
+    provider: nim
+    model: gcp/google/gemini-3-pro
+    base_url_env: NVIDIA_BASE_URL
+    api_key_env: NVIDIA_API_KEY
+    temperature: 0.1
+    max_tokens: 8192
+    # Vision settings
+    base_fps: 1                    # 1 frame/sec for standard chunks
+    high_energy_fps: 4             # 4 FPS when audio energy > threshold
+    high_energy_threshold: 0.7
+    max_chunk_duration_s: 30
+    system_prompt: vlm_edit_grade  # references config/prompts/vlm_edit_grade.txt
+
+  # ─── LLM (Text reasoning) ───────────────────────────────────────
+  # Same Gemini 3 Pro for agent reasoning, structured generation
+  llm:
+    provider: nim
+    model: gcp/google/gemini-3-pro
+    base_url_env: NVIDIA_BASE_URL
+    api_key_env: NVIDIA_API_KEY
+    temperature: 0.4
+    max_tokens: 4096
+
+  # ─── ASR (Speech recognition) ───────────────────────────────────
+  # Whisper runs locally — no API key needed
   asr:
     provider: whisper_local
     model: openai/whisper-large-v3-turbo
     device: cuda:0
-    language: auto  # "auto" for auto-detect, or ISO 639-1 code
+    language: auto
 
-  vlm:
-    provider: qwen35_vl
-    model: Qwen/Qwen3.5-397B-A17B-Instruct
-    device: cuda:0
-    base_fps: 1                    # 1 frame per second for standard chunks
-    high_energy_fps: 4             # 4 FPS when audio analyzer flags energy > 0.7
-    high_energy_threshold: 0.7     # energy threshold for adaptive FPS decision
-    native_video_input: true       # send raw video to model (not extracted frames)
-    max_chunk_duration_s: 30       # max seconds per VLM call
-    system_prompt: vlm_edit_grade  # references config/prompts/vlm_edit_grade.txt
-    temperature: 0.1               # low temperature for structured JSON output
-    max_tokens: 8192
-    max_output_tokens: 200000
-
-  vlm_cloud:                       # optional cloud tier for deep multi-chunk reasoning
-    provider: gemini_pro
-    model: gemini-3-pro
-    enabled: false                 # disabled by default -- local-first
-    use_for: deep_reasoning_only   # only used when ReAct agent explicitly requests cross-chunk analysis
-    api_key_env: GEMINI_API_KEY
-    max_output_tokens: 200000
-
-  llm:
-    provider: local_llama
-    model: meta-llama/Llama-3.3-70B-Instruct
-    endpoint: http://localhost:8000/v1
-    temperature: 0.4
-    max_tokens: 4096
-    max_output_tokens: 200000
-
-  # Alternative configurations (swap by changing 'provider' above)
+  # ─── Alternatives ────────────────────────────────────────────────
+  # Swap by changing 'provider' and 'model' above
   _alternatives:
-    asr_riva:
-      provider: riva_nim
-      endpoint: http://localhost:50051
-      model: riva-asr-en-us-conformer
+    # Local Qwen VLM (self-hosted via vLLM)
+    vlm_qwen35:
+      provider: nim
+      model: Qwen/Qwen3.5-397B-A17B-Instruct
+      base_url: http://localhost:8000/v1
+      native_video_input: true
 
-    asr_openai:
-      provider: whisper_api
-      model: whisper-1
-      api_key_env: OPENAI_API_KEY
+    # Local Llama LLM (self-hosted via vLLM)
+    llm_llama:
+      provider: nim
+      model: meta-llama/Llama-3.3-70B-Instruct
+      base_url: http://localhost:8001/v1
+      temperature: 0.4
 
-    vlm_qwen_small:
-      provider: qwen_vl
-      model: Qwen/Qwen2.5-VL-7B-Instruct
-      device: cuda:0
-      native_video_input: false    # frame-by-frame for older Qwen-VL
-      max_output_tokens: 200000
+    # Nemotron via NIM cloud
+    llm_nemotron:
+      provider: nim
+      model: nvidia/nemotron-3-nano-30b-a3b
+      base_url: https://integrate.api.nvidia.com/v1
+      api_key_env: NVIDIA_API_KEY
+      temperature: 0.1
 
-    vlm_vila_nim:
-      provider: vila_nim
-      endpoint: https://ai.api.nvidia.com/v1/vlm/nvidia/vila
-      api_key_env: NIM_API_KEY
-      max_output_tokens: 200000
-
-    llm_nim:
-      provider: nim_llm
-      model: meta/llama-3.3-70b-instruct
-      endpoint: https://integrate.api.nvidia.com/v1
-      api_key_env: NIM_API_KEY
-      max_output_tokens: 200000
-
+    # OpenAI fallback
     llm_openai:
       provider: openai
       model: gpt-4o
       api_key_env: OPENAI_API_KEY
-      max_output_tokens: 200000

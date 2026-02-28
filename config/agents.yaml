@@ -1,95 +1,30 @@
-# Auto-Vid Agent Configuration for NVIDIA NeMo Agent Toolkit
+# Auto-Vid Agent Configuration — 2-Agent Architecture
 
-general:
-  telemetry:
-    logging:
-      level: INFO
-      format: json
-    tracing:
-      exporter: phoenix           # "phoenix", "otlp", "langfuse"
-      endpoint: http://localhost:6006/v1/traces
-      service_name: auto-vid
-  sandbox:
-    # Sandbox runs natively on a Mac mini -- no Docker container isolation.
-    # FFmpeg, Remotion, and Node.js execute directly on the host machine.
-    host: mac_mini_local          # "mac_mini_local" | "docker" | "remote_ssh"
-    workspace_root: /tmp/autovid-jobs
-    api_port: 9876
-    command_timeout_s: 300
-    render_timeout_s: 600
-    # No resource_limits or network_mode -- host process handles its own resources.
+clarifying:
+  model_ref: llm
+  temperature: 0.4
+  max_questions: 4
+  required_questions:
+    - video_length   # short (15-60s) or long (1-10min)
+    - video_style    # vlog, tutorial, highlights, cinematic, story
 
-pipeline:
-  react_loop:
-    max_iterations: 5
-    min_iterations: 2
-    temperature: 0.4
-    model_ref: llm               # references config/models.yaml models.llm
-
-  subtitle:
-    default_style: tiktok_pop
-    supported_styles: [tiktok_pop, minimal, karaoke, outline]
-    burn_in: true
-    default_languages: [en]
-
-  music:
-    default_source: local_library
-    sources_priority: [local_library, epidemic_sound, mubert]
-    duck_volume: 0.05             # music volume during speech
-    base_volume: 0.15             # music volume during non-speech
-    fade_in_ms: 2000
-    fade_out_ms: 3000
-
-  meme_sfx:
-    default_source: local_pack
-    sfx_volume: 0.8
-    image_overlay_duration_ms: 2000
-    min_confidence_threshold: 0.6
-
-  assembly:
-    z_index:
-      video: 0
-      transitions: 1
-      subtitles_min: 2
-      subtitles_max: 4
-      memes_min: 5
-      memes_max: 10
-      audio: -1
-    output_format: mp4
-    output_codec: h264
-
-  publishing:
-    youtube:
-      privacy_status: unlisted    # "public", "unlisted", "private"
-      category_id: "22"           # People & Blogs
-    tiktok:
-      inbox_mode: true            # video goes to inbox for user confirmation
-    instagram:
-      media_type: REELS
+editing:
+  model_ref: llm
+  temperature: 0.4
+  max_tokens: 8192
+  subtitle_style: tiktok_pop
+  supported_styles: [tiktok_pop, minimal, karaoke, outline]
 
 ingestion:
-  chunking:
-    scene_change_threshold: 0.3
-    min_chunk_duration_s: 10
-    max_chunk_duration_s: 30
-    fallback_interval_s: 20
+  dense_fps: 4
+  summary_fps: 2
+  window_s: 5
+  whisper_model: small
+  whisper_device: cpu
+  whisper_compute: int8
 
-  workers:
-    asr_concurrency: 4
-    vlm_concurrency: 2            # VLM is GPU-bound, lower concurrency
-    audio_concurrency: 8
-
-nat:                              # NeMo Agent Toolkit settings
-  profiler:
-    enabled: true
-    track_token_usage: true
-    track_latency: true
-    track_cost: true
-  optimizer:
-    enabled: false                # enable for hyperparameter sweeping
-    metric: latency               # "latency", "quality", "cost"
-    parameters:
-      - name: react_loop.max_iterations
-        range: [2, 5]
-      - name: pipeline.meme_sfx.min_confidence_threshold
-        range: [0.4, 0.9]
+sandbox:
+  host: mac_mini_local
+  workspace_root: /tmp/autovid-jobs
+  api_port: 9876
+  render_timeout_s: 600

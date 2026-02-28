@@ -1,0 +1,1 @@
+"""Auto-Vid server package."""

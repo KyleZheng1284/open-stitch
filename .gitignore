@@ -62,6 +62,9 @@ out/
 # Docker
 *.log
 
+# Uploaded / generated data
+data/
+
 # Run history / traces / artifacts
 runs/
 outputs/

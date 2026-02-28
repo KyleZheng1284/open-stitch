@@ -2,38 +2,46 @@
 
 ## Prerequisites
 
-- Python 3.11+, Node.js 20+, Docker
+- Python 3.11+, Node.js 20+, Docker, FFmpeg
+- Google Cloud OAuth credentials (Drive API enabled)
+- NVIDIA NIM API key
 
-## Infrastructure
+## 1. Infrastructure
 
 ```bash
 cp .env.example .env
+# Fill in NVIDIA_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 docker compose up -d postgres redis minio minio-init phoenix
-docker compose build sandbox-build
 ```
 
-## Backend
+## 2. Backend
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn autovid.api.app:app --port 8080 --reload
+uvicorn server.main:app --port 8080 --reload
 ```
 
-## Frontend
+## 3. Frontend
 
 ```bash
-cd frontend
+cd client
 npm install
 npm run dev
+```
+
+## 4. Test ingestion (no frontend)
+
+```bash
+python tools/test_ingestion.py data/your_video.mp4
 ```
 
 ## Ports
 
 | Service  | Port |
 |----------|------|
-| Frontend | 3000 |
+| Frontend | 5173 |
 | Backend  | 8080 |
 | Postgres | 5432 |
 | Redis    | 6379 |
