@@ -29,6 +29,7 @@ export default function Upload() {
     setError("");
     try {
       const project = await uploadFiles(files);
+      console.log("Upload response:", project);
       navigate(`/setup/${project.id}`);
     } catch (e: any) {
       setError(e.message || "Upload failed");

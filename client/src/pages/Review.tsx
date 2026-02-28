@@ -12,7 +12,9 @@ export default function Review() {
     if (!projectId) return;
     getProject(projectId)
       .then((proj) => {
-        setVideoUrl(proj.output_uri || null);
+        const uri = proj.output_uri;
+        // output_uri is like "data/output/clip_xxx.mp4" — serve via /files/
+        setVideoUrl(uri ? `/files/${uri.replace(/^data\//, "")}` : null);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -55,7 +57,7 @@ export default function Review() {
               Edit Again
             </button>
             <button
-              onClick={() => navigate("/select")}
+              onClick={() => navigate("/")}
               className="px-6 py-3 border border-neutral-700 rounded-lg font-semibold hover:bg-neutral-800 transition"
             >
               New Project

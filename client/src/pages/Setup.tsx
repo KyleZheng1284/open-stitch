@@ -74,6 +74,7 @@ export default function Setup() {
             Tell us about your video
           </h2>
           <ClarifyChat
+            projectId={projectId!}
             summariesReady={status !== "ingesting"}
             onDone={handleClarifyDone}
           />

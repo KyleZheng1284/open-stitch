@@ -19,6 +19,12 @@ export async function getProject(projectId: string) {
   return res.json();
 }
 
+export async function getQuestions(projectId: string) {
+  const res = await fetch(`${BASE}/projects/${projectId}/questions`);
+  if (!res.ok) throw new Error("Get questions failed");
+  return res.json();
+}
+
 export async function submitClarifyAnswers(
   projectId: string,
   answers: Record<string, string>

@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     vlm_model: str = "gcp/google/gemini-3-pro"
     llm_model: str = "gcp/google/gemini-3-pro"
     llm_temperature: float = 0.4
+    clarifying_model: str = "us/azure/openai/gpt-5-mini"
+    clarifying_temperature: float = 0.2
     editing_model: str = "azure/openai/gpt-5.2"
     editing_temperature: float = 0.3
     summary_model: str = "gcp/google/gemini-2.5-flash-lite"
