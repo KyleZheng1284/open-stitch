@@ -7,13 +7,22 @@ const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
  * token flow and resolves with a short-lived access token scoped to
  * `drive.file` (access only to files this app creates).
  *
- * The token client is initialised lazily on the first call so the GIS script
- * has time to load via the async <script> tag in index.html.
+ * Safe to call multiple times: each call creates a fresh Promise and routes
+ * the GIS callback to that Promise's resolve/reject via mutable refs, avoiding
+ * the closure-capture bug that occurs when the callback is bound to the first
+ * Promise's resolve/reject at initTokenClient time.
+ *
+ * The token client itself is still initialised lazily on the first call so the
+ * async GIS <script> tag in index.html has time to load.
  *
  * Requires VITE_GOOGLE_CLIENT_ID to be set in the environment.
  */
 export function useGoogleDriveAuth() {
   const tokenClientRef = useRef<TokenClient | null>(null);
+  // Mutable refs so the single stored callback always dispatches to the
+  // resolve/reject of whichever Promise is currently in flight.
+  const resolveRef = useRef<((token: string) => void) | null>(null);
+  const rejectRef = useRef<((err: Error) => void) | null>(null);
 
   const getAccessToken = useCallback((): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -28,20 +37,25 @@ export function useGoogleDriveAuth() {
         return;
       }
 
-      // Initialise the token client once and reuse it across calls.
+      // Point the shared refs at this call's Promise before requesting.
+      resolveRef.current = resolve;
+      rejectRef.current = reject;
+
       if (!tokenClientRef.current) {
         tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope: DRIVE_FILE_SCOPE,
           callback: (response: TokenResponse) => {
             if (response.error) {
-              reject(new Error(`OAuth error: ${response.error} — ${response.error_description ?? ''}`));
+              rejectRef.current?.(
+                new Error(`OAuth error: ${response.error} — ${response.error_description ?? ''}`),
+              );
             } else {
-              resolve(response.access_token);
+              resolveRef.current?.(response.access_token);
             }
           },
           error_callback: (error: ClientConfigError) => {
-            reject(new Error(`GIS error (${error.type}): ${error.message}`));
+            rejectRef.current?.(new Error(`GIS error (${error.type}): ${error.message}`));
           },
         });
       }

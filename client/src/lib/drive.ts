@@ -3,8 +3,7 @@
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
-const FOLDER_CACHE_KEY = 'driveUploadsFolderId';
-const UPLOADS_FOLDER_NAME = 'Open Stitch Uploads';
+const DEFAULT_FOLDER_NAME = 'Open Stitch Uploads';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 /** Infer MIME type from file extension when File.type is absent (e.g. .mov on some browsers). */
@@ -17,11 +16,19 @@ function inferMimeType(file: File): string {
 }
 
 /**
- * Returns the Drive folder ID for "YourApp Uploads", creating it if needed.
- * The ID is cached in localStorage so we only call the Drive API once per browser.
+ * Returns the Drive folder ID for the given folder name, creating it if needed.
+ * The ID is cached in localStorage keyed by folder name so we only call the
+ * Drive API once per browser per unique folder name.
+ *
+ * @param token   GIS OAuth access token with the `drive.file` scope.
+ * @param folderName  Display name of the target folder. Defaults to "Open Stitch Uploads".
  */
-export async function getOrCreateUploadsFolderId(token: string): Promise<string> {
-  const cached = localStorage.getItem(FOLDER_CACHE_KEY);
+export async function getOrCreateUploadsFolderId(
+  token: string,
+  folderName: string = DEFAULT_FOLDER_NAME,
+): Promise<string> {
+  const cacheKey = `driveFolder:${folderName}`;
+  const cached = localStorage.getItem(cacheKey);
   if (cached) return cached;
 
   const res = await fetch(DRIVE_FILES_URL, {
@@ -31,18 +38,18 @@ export async function getOrCreateUploadsFolderId(token: string): Promise<string>
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: UPLOADS_FOLDER_NAME,
+      name: folderName,
       mimeType: FOLDER_MIME,
     }),
   });
 
   if (!res.ok) {
     const detail = await res.text();
-    throw new Error(`Failed to create Drive folder (${res.status}): ${detail}`);
+    throw new Error(`Failed to create Drive folder "${folderName}" (${res.status}): ${detail}`);
   }
 
   const data = await res.json() as { id: string };
-  localStorage.setItem(FOLDER_CACHE_KEY, data.id);
+  localStorage.setItem(cacheKey, data.id);
   return data.id;
 }
 
