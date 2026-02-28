@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -23,13 +24,15 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# StaticFiles mount validates directory at import time.
+Path("data").mkdir(parents=True, exist_ok=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("Starting Auto-Vid API — db=%s", settings.database_url.split("@")[-1])
-    # Ensure upload dir exists
-    from pathlib import Path
+    # Ensure upload/output dirs exist.
     Path("data/uploads").mkdir(parents=True, exist_ok=True)
     Path("data/output").mkdir(parents=True, exist_ok=True)
     yield

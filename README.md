@@ -85,6 +85,24 @@ Open http://localhost:5173
 docker compose build sandbox-build
 ```
 
+### 6. Team Inference Relay (optional)
+
+Use this when teammates should call one shared OpenAI-compatible endpoint that forwards to your configured inference base URL.
+
+```bash
+cp .env.relay.example .env.relay
+source .venv/bin/activate
+uvicorn relay.main:app --host 127.0.0.1 --port 8090
+```
+
+Endpoints:
+- `GET /health`
+- `GET /v1/models` (Bearer token required)
+- `POST /v1/chat/completions` (Bearer token required, stream + non-stream)
+
+Cloudflare relay/backend setup: `TUNNEL_GUIDE.md`
+Teammate env template: `TEAM_CLIENT.env.example`
+
 ---
 
 ## Test the Ingestion Pipeline (no frontend needed)

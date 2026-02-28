@@ -1,0 +1,8 @@
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /Users/REPLACE_ME/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+
+ingress:
+  - hostname: llm-relay.REPLACE_WITH_DOMAIN
+    service: http://127.0.0.1:8090
+  - service: http_status:404
+
