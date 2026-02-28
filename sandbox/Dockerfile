@@ -1,15 +1,17 @@
 FROM node:20-slim
 
-# Install system dependencies: FFmpeg + Python 3.11
+# Install system dependencies: FFmpeg + Chromium (needed by @remotion/renderer)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
+        chromium \
         python3 \
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Remotion CLI globally
-RUN npm install -g @remotion/cli remotion
+# Tell Puppeteer/Remotion to use the installed Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV REMOTION_CHROME_EXECUTABLE=/usr/bin/chromium
 
 WORKDIR /workspace
 
@@ -18,19 +20,17 @@ COPY package.json ./code/package.json
 COPY sandbox-server.js ./code/sandbox-server.js
 COPY remotion-compositions/ ./code/remotion-compositions/
 
-# Install sandbox server dependencies
-RUN cd /workspace/code && npm install --production
+# Install sandbox server dependencies (includes @remotion/bundler + renderer)
+RUN cd /workspace/code && npm install
 
 # Create workspace directory structure
 RUN mkdir -p input/chunks input/audio \
     assets/memes assets/sfx assets/music \
     intermediate/subtitles intermediate/timeline intermediate/audio_mixed \
-    output \
-    code/remotion-compositions
+    output
 
-# Install Remotion composition dependencies
-RUN cd /workspace/code/remotion-compositions && \
-    npm install --production 2>/dev/null || true
+# Install Remotion composition dependencies (bundler + renderer need full install)
+RUN cd /workspace/code/remotion-compositions && npm install
 
 EXPOSE 9876
 

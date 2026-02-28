@@ -19,6 +19,7 @@ interface TimelineLayer {
   source?: string;
   start_ms?: number;
   end_ms?: number;
+  source_start_ms?: number;
   at_ms?: number;
   duration_ms?: number;
   crop?: { x: number; y: number; width: number; height: number };
@@ -74,6 +75,9 @@ export const TimelineComposition: React.FC<TimelineProps> = ({
             const duration = msToFrames(
               (layer.end_ms || 0) - (layer.start_ms || 0)
             );
+            const startFrom = layer.source_start_ms != null
+              ? msToFrames(layer.source_start_ms)
+              : 0;
             return (
               <Sequence key={`video-${idx}`} from={from} durationInFrames={duration}>
                 <VideoLayer
@@ -81,6 +85,7 @@ export const TimelineComposition: React.FC<TimelineProps> = ({
                   speed={layer.speed || 1.0}
                   crop={layer.crop}
                   transitionIn={layer.transition_in}
+                  startFrom={startFrom}
                 />
               </Sequence>
             );

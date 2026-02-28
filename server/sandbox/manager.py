@@ -1,14 +1,22 @@
-"""Docker sandbox lifecycle management."""
+"""Docker sandbox lifecycle management.
+
+Mounts the host data/ directory into /workspace/data so the container
+can read uploaded videos directly without base64 HTTP staging.
+"""
 from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 
 from server.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 _containers: dict[str, dict] = {}
+
+# Resolve the host data dir once (for volume mount)
+_DATA_DIR = str(Path("data").resolve())
 
 
 async def create_sandbox(job_id: str) -> str:
@@ -24,14 +32,18 @@ async def create_sandbox(job_id: str) -> str:
             detach=True,
             name=sandbox_id,
             ports={"9876/tcp": None},
+            volumes={_DATA_DIR: {"bind": "/workspace/data", "mode": "rw"}},
             mem_limit="8g",
             cpu_count=4,
             tmpfs={"/tmp": "size=2g"},
             remove=False,
         )
-        port = container.ports.get("9876/tcp", [{}])[0].get("HostPort", "9876")
+        # Wait for port assignment
+        container.reload()
+        ports = container.ports.get("9876/tcp", [{}])
+        port = ports[0].get("HostPort", "9876") if ports else "9876"
         _containers[sandbox_id] = {"container": container, "port": port, "job_id": job_id}
-        logger.info("Sandbox %s created on port %s", sandbox_id, port)
+        logger.info("Sandbox %s created on port %s (data mounted at /workspace/data)", sandbox_id, port)
     except Exception as e:
         logger.warning("Docker not available, using mock sandbox: %s", e)
         _containers[sandbox_id] = {"port": "9876", "job_id": job_id, "mock": True}
@@ -54,3 +66,7 @@ def get_sandbox_url(sandbox_id: str) -> str:
     info = _containers.get(sandbox_id, {})
     port = info.get("port", "9876")
     return f"http://localhost:{port}"
+
+
+def is_mock(sandbox_id: str) -> bool:
+    return _containers.get(sandbox_id, {}).get("mock", False)

@@ -24,6 +24,7 @@ interface VideoLayerProps {
   speed?: number;
   crop?: CropRegion;
   transitionIn?: TransitionIn;
+  startFrom?: number;
 }
 
 /**
@@ -35,6 +36,7 @@ export const VideoLayer: React.FC<VideoLayerProps> = ({
   speed = 1.0,
   crop,
   transitionIn,
+  startFrom = 0,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -63,6 +65,7 @@ export const VideoLayer: React.FC<VideoLayerProps> = ({
       <AbsoluteFill style={cropStyle}>
         <OffthreadVideo
           src={src}
+          startFrom={startFrom}
           playbackRate={speed}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />

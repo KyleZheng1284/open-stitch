@@ -28,6 +28,9 @@ app.use(express.json({ limit: "50mb" }));
 
 const WORKSPACE = "/workspace";
 
+// Serve data directory (volume-mounted) as static files for Remotion
+app.use("/static", express.static(path.join(WORKSPACE, "data")));
+
 // ─── Health ──────────────────────────────────────────────────────────
 
 app.get("/health", (_req, res) => {
@@ -171,38 +174,67 @@ app.post("/ffmpeg", (req, res) => {
   }
 });
 
-// ─── Execution: Remotion Render ──────────────────────────────────────
+// ─── Execution: Remotion Render (Node API) ──────────────────────────
 
-app.post("/remotion/render", (req, res) => {
+// Cache the bundle so we don't re-bundle on every render
+let _bundleLocation = null;
+
+async function ensureBundle() {
+  if (_bundleLocation) return _bundleLocation;
+  const { bundle } = require("@remotion/bundler");
+  _bundleLocation = await bundle({
+    entryPoint: "/workspace/code/remotion-compositions/index.ts",
+    onProgress: (pct) => {
+      if (pct % 25 === 0) console.log(`Bundling: ${pct}%`);
+    },
+  });
+  console.log("Remotion bundle ready:", _bundleLocation);
+  return _bundleLocation;
+}
+
+app.post("/remotion/render", async (req, res) => {
   const { timeline, output = "/workspace/output/render.mp4" } = req.body;
   if (!timeline) {
     return res.status(400).json({ error: "Missing timeline JSON" });
   }
 
-  // Write timeline to temp file
+  // Write timeline for debugging
   const timelinePath = path.join(WORKSPACE, "intermediate/timeline/_current.json");
   fs.mkdirSync(path.dirname(timelinePath), { recursive: true });
-  fs.writeFileSync(timelinePath, JSON.stringify(timeline), "utf-8");
+  fs.writeFileSync(timelinePath, JSON.stringify(timeline, null, 2), "utf-8");
 
   // Ensure output directory exists
   fs.mkdirSync(path.dirname(output), { recursive: true });
 
   try {
-    const cmd = [
-      "npx", "remotion", "render",
-      "/workspace/code/remotion-compositions/Root.tsx",
-      "TimelineComposition",
-      output,
-      "--props", timelinePath,
-      "--codec", "h264",
-      "--concurrency", "2",
-    ].join(" ");
+    const { selectComposition, renderMedia } = require("@remotion/renderer");
 
-    const stdout = execSync(cmd, {
-      cwd: "/workspace/code/remotion-compositions",
-      timeout: 600 * 1000, // 10 min for renders
-      maxBuffer: 50 * 1024 * 1024,
-      encoding: "utf-8",
+    const bundleLocation = await ensureBundle();
+
+    const browserExecutable = process.env.REMOTION_CHROME_EXECUTABLE || "/usr/bin/chromium";
+
+    // Resolve the composition with timeline as input props
+    const composition = await selectComposition({
+      serveUrl: bundleLocation,
+      id: "TimelineComposition",
+      inputProps: timeline,
+      browserExecutable,
+    });
+
+    // Render the video
+    await renderMedia({
+      serveUrl: bundleLocation,
+      composition,
+      codec: "h264",
+      outputLocation: output,
+      inputProps: timeline,
+      concurrency: 2,
+      browserExecutable,
+      onProgress: ({ progress }) => {
+        if (Math.round(progress * 100) % 10 === 0) {
+          console.log(`Render progress: ${Math.round(progress * 100)}%`);
+        }
+      },
     });
 
     const stat = fs.statSync(output);
@@ -210,13 +242,13 @@ app.post("/remotion/render", (req, res) => {
       exit_code: 0,
       output_path: output,
       output_size: stat.size,
-      stdout,
     });
   } catch (err) {
+    console.error("Render error:", err);
     res.json({
-      exit_code: err.status || 1,
-      stdout: err.stdout || "",
-      stderr: err.stderr || err.message,
+      exit_code: 1,
+      stdout: "",
+      stderr: err.message || String(err),
     });
   }
 });

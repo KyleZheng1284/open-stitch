@@ -85,14 +85,72 @@ class Composition(BaseModel):
         return max(s.position_ms + int((s.end_ms - s.start_ms) / s.speed) for s in self.sequences)
 
     def to_timeline_json(self) -> dict:
-        """Serialize to the format expected by sandbox Remotion render."""
+        """Serialize to the format expected by sandbox Remotion render.
+
+        Maps internal fields to what TimelineComposition.tsx expects:
+        - position_ms → start_ms (output timeline position)
+        - start_ms/end_ms → source_start_ms (where to seek in source)
+        - source_uri → source (sandbox file path, rewritten by client)
+        """
+        layers: list[dict] = []
+
+        for i, s in enumerate(self.sequences):
+            clip_dur_ms = int((s.end_ms - s.start_ms) / s.speed)
+            layers.append({
+                "type": "video",
+                "z_index": i,
+                "source": s.source_uri,
+                "start_ms": s.position_ms,
+                "end_ms": s.position_ms + clip_dur_ms,
+                "source_start_ms": s.start_ms,
+                "speed": s.speed,
+                "crop": s.crop,
+                "transition_in": s.transition_in,
+            })
+
+        for i, s in enumerate(self.subtitles):
+            layers.append({
+                "type": "subtitle",
+                "z_index": 100 + i,
+                "text": s.text,
+                "start_ms": s.start_ms,
+                "end_ms": s.end_ms,
+                "style": s.style,
+                "position": s.position,
+            })
+
+        for i, a in enumerate(self.audio_layers):
+            layers.append({
+                "type": "audio",
+                "z_index": 200 + i,
+                "source": a.audio_uri,
+                "start_ms": a.start_ms,
+                "volume": a.volume,
+                "duck_points": a.duck_points,
+                "fade_in_ms": a.fade_in_ms,
+                "fade_out_ms": a.fade_out_ms,
+            })
+
+        for i, o in enumerate(self.overlays):
+            layers.append({
+                "type": "meme_overlay",
+                "z_index": 50 + i,
+                "source": o.asset_uri,
+                "at_ms": o.at_ms,
+                "duration_ms": o.duration_ms,
+                "position": {"x": o.x, "y": o.y},
+                "scale": o.scale,
+                "animation": o.animation,
+            })
+
         return {
             "clip_id": self.clip_id,
-            "output": {"width": self.width, "height": self.height, "fps": self.fps, "codec": "h264"},
-            "layers": (
-                [{"type": "video", **s.model_dump()} for s in self.sequences]
-                + [{"type": "subtitle", **s.model_dump()} for s in self.subtitles]
-                + [{"type": "audio", **a.model_dump()} for a in self.audio_layers]
-                + [{"type": "overlay", **o.model_dump()} for o in self.overlays]
-            ),
+            "output": {
+                "format": "mp4",
+                "codec": "h264",
+                "width": self.width,
+                "height": self.height,
+                "fps": self.fps,
+            },
+            "layers": layers,
         }
