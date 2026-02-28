@@ -7,7 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 
 from server.schemas.project import ClarifyAnswer, EditRequest, ProjectStatus, VideoInfo
 
@@ -85,7 +85,7 @@ async def get_project(project_id: str):
 
 
 @router.get("/{project_id}/questions")
-async def get_questions(project_id: str):
+async def get_questions(project_id: str, request: Request):
     """Generate clarifying questions from video summaries via LLM."""
     project = _projects.get(project_id)
     if not project:
@@ -105,7 +105,12 @@ async def get_questions(project_id: str):
 
     logger.info("💬 Generating clarifying questions for %s (%d videos)", project_id, len(summaries))
     from server.agents.clarifying import generate_initial_questions
-    result = await generate_initial_questions(summaries)
+    request_id = request.headers.get("x-request-id", f"req_{uuid.uuid4().hex[:12]}")
+    result = await generate_initial_questions(
+        summaries,
+        project_id=project_id,
+        request_id=request_id,
+    )
     logger.info("💬 Generated %d questions", len(result.get("questions", [])))
     return result
 

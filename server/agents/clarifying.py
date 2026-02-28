@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
+import time
+import uuid
 from typing import Any
 
 import httpx
@@ -62,7 +65,9 @@ async def _call_llm(
     max_tokens: int = 2048,
     temperature: float | None = None,
     retries: int = 2,
-) -> str:
+    project_id: str | None = None,
+    request_id: str | None = None,
+) -> tuple[str, dict[str, Any] | None]:
     s = get_settings()
     use_temp = s.clarifying_temperature if temperature is None else temperature
     payload = {
@@ -98,7 +103,16 @@ async def _call_llm(
                     await asyncio.sleep(delay)
                     continue
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            body = resp.json()
+            usage = body.get("usage")
+            logger.info(
+                "Clarifying LLM response project_id=%s request_id=%s latency_ms=%d usage=%s",
+                project_id,
+                request_id,
+                int(resp.elapsed.total_seconds() * 1000),
+                usage if isinstance(usage, dict) else None,
+            )
+            return body["choices"][0]["message"]["content"], usage if isinstance(usage, dict) else None
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             if attempt < retries:
                 delay = _retry_delay_s(attempt)
@@ -121,6 +135,22 @@ def _load_clarifying_config() -> dict[str, Any]:
     if not isinstance(cfg, dict):
         return {}
     return cfg
+
+
+@contextlib.contextmanager
+def _clarifying_run_span(project_id: str | None, request_id: str | None):
+    start = time.perf_counter()
+    logger.info("Clarifying run started project_id=%s request_id=%s", project_id, request_id)
+    try:
+        yield
+    finally:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        logger.info(
+            "Clarifying run finished project_id=%s request_id=%s latency_ms=%d",
+            project_id,
+            request_id,
+            latency_ms,
+        )
 
 
 def _required_prompt_lines(required_questions: list[str]) -> str:
@@ -173,129 +203,145 @@ def _enforce_question_rules(
     return [by_id[qid].model_dump() for qid in final_ids]
 
 
-async def generate_initial_questions(summaries: list[dict]) -> dict:
+async def generate_initial_questions(
+    summaries: list[dict],
+    *,
+    project_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
     """Analyze video summaries and generate directed clarifying questions.
 
     The agent reads what's in the videos and suggests possible storylines,
     then asks the user to pick/refine their vision.
     """
-    summary_block = "\n\n".join(
-        f"Video {i+1} ({s.get('filename', 'unknown')}, {s.get('duration_s', 0):.0f}s):\n{s.get('summary', 'No summary')}"
-        for i, s in enumerate(summaries)
-    )
+    req_id = request_id or f"req_{uuid.uuid4().hex[:12]}"
+    with _clarifying_run_span(project_id, req_id):
+        summary_block = "\n\n".join(
+            f"Video {i+1} ({s.get('filename', 'unknown')}, {s.get('duration_s', 0):.0f}s):\n{s.get('summary', 'No summary')}"
+            for i, s in enumerate(summaries)
+        )
 
-    total_duration = sum(s.get("duration_s", 0) for s in summaries)
-    clarifying_cfg = _load_clarifying_config()
-    max_questions = int(clarifying_cfg.get("max_questions", 4))
-    required_questions = clarifying_cfg.get("required_questions", ["video_length", "video_style"])
-    if not isinstance(required_questions, list):
-        required_questions = ["video_length", "video_style"]
-    required_questions = [str(qid) for qid in required_questions]
-    temperature_cfg = clarifying_cfg.get("temperature")
-    use_temperature = float(temperature_cfg) if temperature_cfg is not None else None
+        total_duration = sum(s.get("duration_s", 0) for s in summaries)
+        clarifying_cfg = _load_clarifying_config()
+        max_questions = int(clarifying_cfg.get("max_questions", 4))
+        required_questions = clarifying_cfg.get("required_questions", ["video_length", "video_style"])
+        if not isinstance(required_questions, list):
+            required_questions = ["video_length", "video_style"]
+        required_questions = [str(qid) for qid in required_questions]
+        temperature_cfg = clarifying_cfg.get("temperature")
+        use_temperature = float(temperature_cfg) if temperature_cfg is not None else None
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an expert video editor and creative director. The user has "
-                "uploaded raw footage and you've analyzed it. Your job is to:\n\n"
-                "1. UNDERSTAND what's in the footage — identify the key moments, "
-                "people, locations, actions, and narrative threads\n"
-                "2. SUGGEST 2-3 possible storylines or edit directions based on "
-                "what you see (e.g. 'a day-in-the-life vlog focusing on the cooking "
-                "scenes', 'a high-energy montage of the outdoor activities')\n"
-                "3. ASK directed questions that help you make precise editing decisions\n\n"
-                "Your questions should reference SPECIFIC content from the summaries. "
-                "Don't ask generic questions like 'what style do you want' — instead "
-                "ask things like 'I noticed cooking scenes in Video 1 and a sunset in "
-                "Video 2 — should I build the story around the cooking with the sunset "
-                "as the ending, or focus on something else?'\n\n"
-                f"Total raw footage: {total_duration:.0f}s across {len(summaries)} video(s).\n\n"
-                f"Question count cap: {max_questions} total questions.\n"
-                "Required questions that must be included in output (exact IDs):\n"
-                f"{_required_prompt_lines(required_questions)}\n\n"
-                "Return JSON with this exact structure:\n"
-                "{\n"
-                '  "analysis": "1-2 sentence summary of what you see across all videos",\n'
-                '  "suggested_storylines": [\n'
-                '    {"title": "short name", "description": "what this edit would look like"}\n'
-                "  ],\n"
-                '  "questions": [\n'
-                '    {"id": "q1", "text": "specific question referencing video content", "options": ["option1", "option2"] or null}\n'
-                "  ]\n"
-                "}\n\n"
-                "Return ONLY valid JSON."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Here's what I see in the uploaded footage:\n\n{summary_block}\n\n"
-                "Analyze this footage and generate your questions."
-            ),
-        },
-    ]
-
-    raw = await _call_llm(messages, temperature=use_temperature)
-    try:
-        parsed = _parse_structured_output(raw)
-    except (json.JSONDecodeError, ValidationError, ValueError):
-        logger.warning("Clarifying response validation failed; retrying once with stricter prompt")
-        fallback_messages = [
+        messages = [
             {
                 "role": "system",
                 "content": (
-                    "Return strict JSON only with keys: analysis, suggested_storylines, questions.\n"
-                    "analysis must be a string.\n"
-                    "suggested_storylines must be a list of {title, description}.\n"
-                    "questions must be a list of {id, text, options} where options is array or null.\n"
-                    f"Keep total questions <= {max_questions}.\n"
-                    "Include required questions with exact IDs:\n"
-                    f"{_required_prompt_lines(required_questions)}"
+                    "You are an expert video editor and creative director. The user has "
+                    "uploaded raw footage and you've analyzed it. Your job is to:\n\n"
+                    "1. UNDERSTAND what's in the footage — identify the key moments, "
+                    "people, locations, actions, and narrative threads\n"
+                    "2. SUGGEST 2-3 possible storylines or edit directions based on "
+                    "what you see (e.g. 'a day-in-the-life vlog focusing on the cooking "
+                    "scenes', 'a high-energy montage of the outdoor activities')\n"
+                    "3. ASK directed questions that help you make precise editing decisions\n\n"
+                    "Your questions should reference SPECIFIC content from the summaries. "
+                    "Don't ask generic questions like 'what style do you want' — instead "
+                    "ask things like 'I noticed cooking scenes in Video 1 and a sunset in "
+                    "Video 2 — should I build the story around the cooking with the sunset "
+                    "as the ending, or focus on something else?'\n\n"
+                    f"Total raw footage: {total_duration:.0f}s across {len(summaries)} video(s).\n\n"
+                    f"Question count cap: {max_questions} total questions.\n"
+                    "Required questions that must be included in output (exact IDs):\n"
+                    f"{_required_prompt_lines(required_questions)}\n\n"
+                    "Return JSON with this exact structure:\n"
+                    "{\n"
+                    '  "analysis": "1-2 sentence summary of what you see across all videos",\n'
+                    '  "suggested_storylines": [\n'
+                    '    {"title": "short name", "description": "what this edit would look like"}\n'
+                    "  ],\n"
+                    '  "questions": [\n'
+                    '    {"id": "q1", "text": "specific question referencing video content", "options": ["option1", "option2"] or null}\n'
+                    "  ]\n"
+                    "}\n\n"
+                    "Return ONLY valid JSON."
                 ),
             },
             {
                 "role": "user",
-                "content": f"Footage summaries:\n{summary_block}",
+                "content": (
+                    f"Here's what I see in the uploaded footage:\n\n{summary_block}\n\n"
+                    "Analyze this footage and generate your questions."
+                ),
             },
         ]
-        retry_raw = await _call_llm(
-            fallback_messages,
+
+        raw, _usage = await _call_llm(
+            messages,
             temperature=use_temperature,
-            retries=1,
+            project_id=project_id,
+            request_id=req_id,
         )
         try:
-            parsed = _parse_structured_output(retry_raw)
+            parsed = _parse_structured_output(raw)
         except (json.JSONDecodeError, ValidationError, ValueError):
-            logger.error("Failed to parse clarifying JSON after retry")
-            return _build_fallback_response(required_questions, max_questions)
+            logger.warning("Clarifying response validation failed; retrying once with stricter prompt")
+            fallback_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return strict JSON only with keys: analysis, suggested_storylines, questions.\n"
+                        "analysis must be a string.\n"
+                        "suggested_storylines must be a list of {title, description}.\n"
+                        "questions must be a list of {id, text, options} where options is array or null.\n"
+                        f"Keep total questions <= {max_questions}.\n"
+                        "Include required questions with exact IDs:\n"
+                        f"{_required_prompt_lines(required_questions)}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Footage summaries:\n{summary_block}",
+                },
+            ]
+            retry_raw, _retry_usage = await _call_llm(
+                fallback_messages,
+                temperature=use_temperature,
+                retries=1,
+                project_id=project_id,
+                request_id=req_id,
+            )
+            try:
+                parsed = _parse_structured_output(retry_raw)
+            except (json.JSONDecodeError, ValidationError, ValueError):
+                logger.error("Failed to parse clarifying JSON after retry")
+                return _build_fallback_response(required_questions, max_questions)
 
-    result = parsed.model_dump()
-    result["questions"] = _enforce_question_rules(
-        parsed.questions,
-        required_questions=required_questions,
-        max_questions=max_questions,
-    )
+        result = parsed.model_dump()
+        result["questions"] = _enforce_question_rules(
+            parsed.questions,
+            required_questions=required_questions,
+            max_questions=max_questions,
+        )
 
-    # Prepend analysis + storylines as the first "message" the user sees
-    intro_parts = []
-    if result.get("analysis"):
-        intro_parts.append(result["analysis"])
-    if result.get("suggested_storylines"):
-        intro_parts.append("\nHere are some directions I could take this:")
-        for i, sl in enumerate(result["suggested_storylines"], 1):
-            intro_parts.append(f"  {i}. **{sl['title']}** — {sl['description']}")
+        # Prepend analysis + storylines as the first "message" the user sees
+        intro_parts = []
+        if result.get("analysis"):
+            intro_parts.append(result["analysis"])
+        if result.get("suggested_storylines"):
+            intro_parts.append("\nHere are some directions I could take this:")
+            for i, sl in enumerate(result["suggested_storylines"], 1):
+                intro_parts.append(f"  {i}. **{sl['title']}** — {sl['description']}")
 
-    if intro_parts:
-        result["intro"] = "\n".join(intro_parts)
+        if intro_parts:
+            result["intro"] = "\n".join(intro_parts)
 
-    logger.info(
-        "Clarifying agent: %d storylines, %d questions",
-        len(result.get("suggested_storylines", [])),
-        len(result.get("questions", [])),
-    )
-    return result
+        logger.info(
+            "Clarifying agent: %d storylines, %d questions project_id=%s request_id=%s",
+            len(result.get("suggested_storylines", [])),
+            len(result.get("questions", [])),
+            project_id,
+            req_id,
+        )
+        return result
 
 
 def _build_fallback_response(required_questions: list[str], max_questions: int) -> dict:
