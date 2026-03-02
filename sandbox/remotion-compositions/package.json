@@ -1,0 +1,23 @@
+{
+  "name": "autovid-remotion",
+  "version": "1.0.0",
+  "description": "Remotion compositions for AutoVid sandbox rendering",
+  "scripts": {
+    "build": "remotion bundle",
+    "render": "remotion render Root TimelineComposition",
+    "preview": "remotion preview Root"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@remotion/media-utils": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/react": "^18.3.0"
+  }
+}

@@ -1,0 +1,64 @@
+# Auto-Vid Agent Configuration — Legacy + Graph Architecture
+
+clarifying:
+  model_ref: llm
+  temperature: 0.4
+  max_questions: 4
+  required_questions:
+    - video_length   # short (15-60s) or long (1-10min)
+    - video_style    # vlog, tutorial, highlights, cinematic, story
+
+editing:
+  model_ref: llm
+  temperature: 0.4
+  max_tokens: 8192
+  subtitle_style: tiktok_pop
+  supported_styles: [tiktok_pop, minimal, karaoke, outline]
+
+ingestion:
+  dense_fps: 4
+  summary_fps: 2
+  window_s: 5
+  whisper_model: small
+  whisper_device: cpu
+  whisper_compute: int8
+
+sandbox:
+  host: mac_mini_local
+  workspace_root: /tmp/autovid-jobs
+  api_port: 9876
+  render_timeout_s: 600
+
+graph:
+  enabled: false
+  fail_open: true
+  max_steps: 32
+  emit_node_events: true
+  agents:
+    planning:
+      model_ref: llm
+      temperature: 0.2
+    research:
+      model_ref: llm
+      temperature: 0.1
+    clarification:
+      model_ref: llm
+      temperature: 0.2
+    user_verification:
+      model_ref: llm
+      temperature: 0.0
+    internal_verification:
+      model_ref: llm
+      temperature: 0.0
+    synthesis:
+      model_ref: llm
+      temperature: 0.3
+    remotion_synthesis:
+      model_ref: llm
+      temperature: 0.2
+    editing_synthesis:
+      model_ref: llm
+      temperature: 0.3
+    final_qa:
+      model_ref: llm
+      temperature: 0.0

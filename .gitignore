@@ -1,0 +1,88 @@
+# IDE / Editor
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets / API keys / Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+service-account*.json
+secrets.yaml
+secrets.yml
+*.secret
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.venv/
+venv/
+env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.npm/
+.yarn/
+.pnp.*
+
+# Docker
+*.log
+
+# Uploaded / generated data
+data/
+
+# Run history / traces / artifacts
+runs/
+outputs/
+logs/
+*.log
+tmp/
+temp/
+.cache/
+*.sqlite
+*.sqlite3
+*.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Claude (keep skills/ tracked for team, ignore local config)
+.claude/*
+!.claude/skills/
+
+# Figma reference copies
+client/src copy/
