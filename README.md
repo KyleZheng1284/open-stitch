@@ -1,6 +1,6 @@
 # Open-Stitch (Auto-Vid)
 
-AI-powered video editing from Google Drive. Select videos, describe your vision, get an edited video back.
+AI-powered video editing. Select videos, describe your vision, get an edited video back.
 
 Built with FastAPI, Vite + React, Remotion, Gemini 3 Pro, and Whisper.
 
@@ -9,11 +9,10 @@ Built with FastAPI, Vite + React, Remotion, Gemini 3 Pro, and Whisper.
 ## How It Works
 
 ```
-Screen 0: Login with Google
-Screen 1: Select mp4s from Drive → download → Flash Lite summary (2 FPS)
-Screen 2: Reorder clips + answer clarifying questions → structured prompt
-Screen 3: Watch pipeline progress (ASR + VLM + edit plan + Remotion render)
-Screen 4: Review and download final video
+Screen 0: Select mp4s from Drive → download → Flash Lite summary (2 FPS)
+Screen 1: Reorder clips + answer clarifying questions → structured prompt
+Screen 2: Watch pipeline progress (ASR + VLM + edit plan + Remotion render)
+Screen 3: Review and download final video
 ```
 
 Graph-managed agents:
