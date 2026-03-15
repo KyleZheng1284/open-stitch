@@ -1,8 +1,13 @@
-# Open-Stitch (Auto-Vid)
+# Open Stitch - Hackathon Project
 
-AI-powered video editing. Select videos, describe your vision, get an edited video back.
+**Winner - Best Use of Gemini**  
+Project built at **CUHackit 2026 Hackathon**
+
+Open-Stitch is an AI-powered video editing system that uses multimodal models to automatically generate edited videos from raw clips and natural language instructions.
 
 Built with FastAPI, Vite + React, Remotion, Gemini 3 Pro, and Whisper.
+
+Devpost:https://devpost.com/software/open-stitch#updates
 
 ---
 
